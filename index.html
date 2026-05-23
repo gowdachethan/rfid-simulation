@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RFID Deployment Simulation — Full Factory Layout</title>
+    <meta name="description" content="Interactive 3D simulation of complete RFID deployment with 15 readers, 11 tanks, and process flow for industrial electroplating factory.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <!-- App Scripts -->
+    <script>
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            var string = msg.toLowerCase();
+            var substring = "script error";
+            if (string.indexOf(substring) > -1){
+                alert('Script Error: See Browser Console for Detail');
+            } else {
+                var message = [
+                    'Message: ' + msg,
+                    'URL: ' + url,
+                    'Line: ' + lineNo,
+                    'Column: ' + columnNo,
+                    'Error object: ' + JSON.stringify(error)
+                ].join(' - ');
+                document.getElementById('loading-screen').innerHTML += '<div style="color: red; z-index: 9999; position: relative;">' + message + '</div>';
+            }
+            return false;
+        };
+    </script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loader-content">
+            <div class="loader-ring">
+                <div class="ring-segment"></div>
+                <div class="ring-segment"></div>
+                <div class="ring-segment"></div>
+            </div>
+            <h2>RFID DEPLOYMENT SIMULATION</h2>
+            <p class="loader-subtitle">Building Full Factory Environment — 15 Readers, 11 Tanks...</p>
+            <div class="loader-bar"><div class="loader-progress"></div></div>
+        </div>
+    </div>
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container"></div>
+    <div id="label-container"></div>
+
+    <!-- Top Header Bar -->
+    <header id="top-bar">
+        <div class="top-bar-left">
+            <div class="logo-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M2 9.5L12 4l10 5.5M2 14.5L12 9l10 5.5M2 19.5L12 14l10 5.5"/>
+                </svg>
+            </div>
+            <div class="title-group">
+                <h1>RFID DEPLOYMENT SIMULATION</h1>
+                <span class="subtitle">Full Factory Layout — 15 Readers • 11 Tanks • 3 Zones</span>
+            </div>
+        </div>
+        <div class="top-bar-right">
+            <div class="status-badge live">
+                <span class="status-dot"></span>
+                SIMULATION ACTIVE
+            </div>
+            <div class="unit-toggle" id="unit-toggle" title="Toggle Units (ft / m)">
+                <span class="unit-label active" data-unit="ft">FT</span>
+                <span class="unit-divider">/</span>
+                <span class="unit-label" data-unit="m">M</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Camera View Controls -->
+    <div id="view-controls">
+        <button class="view-btn active" data-view="perspective" title="3D Perspective View">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+            <span>3D</span>
+        </button>
+        <button class="view-btn" data-view="top" title="Top Down View">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+            <span>Top</span>
+        </button>
+        <button class="view-btn" data-view="front" title="Front View">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>Front</span>
+        </button>
+        <button class="view-btn" data-view="side" title="Side View">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18v12H3zM3 6l4-3h10l4 3"/></svg>
+            <span>Side</span>
+        </button>
+        <button class="view-btn" data-view="area1" title="Focus Area 1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-10-10h4m12 0h4"/></svg>
+            <span>Zone 1</span>
+        </button>
+        <button class="view-btn" data-view="area2" title="Focus Area 2 - Enclosure">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="1"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>Zone 2</span>
+        </button>
+        <button class="view-btn" data-view="area3" title="Focus Area 3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><circle cx="12" cy="12" r="2"/></svg>
+            <span>Zone 3</span>
+        </button>
+    </div>
+
+    <!-- Specs Panel (Right Side) -->
+    <aside id="specs-panel">
+        <div class="panel-header">
+            <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                FACTORY OVERVIEW
+            </h3>
+            <button class="panel-toggle" id="specs-toggle" title="Toggle Panel">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+        </div>
+        <div class="panel-body" id="specs-body">
+
+            <!-- Process Simulation Control -->
+            <div class="spec-card process-card">
+                <div class="spec-card-header">
+                    <div class="spec-icon process-icon"></div>
+                    <div>
+                        <h4>PROCESS SIMULATION</h4>
+                        <span class="spec-tag" id="process-status">Ready to Start</span>
+                    </div>
+                </div>
+                <div class="spec-details">
+                    <div class="sim-controls">
+                        <button class="sim-btn primary" id="btn-play" title="Start Process">▶ Start</button>
+                        <button class="sim-btn" id="btn-pause" disabled title="Pause">⏸</button>
+                        <button class="sim-btn" id="btn-reset" disabled title="Reset">⏹</button>
+                        <div class="speed-control">
+                            <label>Speed</label>
+                            <input type="range" id="sim-speed" min="1" max="10" value="5" title="Simulation Speed">
+                        </div>
+                    </div>
+                    <div class="timer-box" id="timer-box">
+                        <div class="timer-label">DIP TIMER</div>
+                        <div class="timer-value" id="timer-value">00:00</div>
+                        <div class="timer-tank" id="timer-tank">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Area 1: Wall Mounted Readers -->
+            <div class="spec-card area-card area1-card">
+                <div class="spec-card-header">
+                    <div class="spec-icon area1-icon">1</div>
+                    <div>
+                        <h4>JIG IN AREA</h4>
+                        <span class="spec-tag">Wall Mounted Readers 1–4</span>
+                    </div>
+                </div>
+                <div class="spec-details">
+                    <div class="spec-row"><span class="spec-label">Readers</span><span class="spec-value">#1, #2, #3, #4</span></div>
+                    <div class="spec-row"><span class="spec-label">Stand Height</span><span class="spec-value" data-ft="7.0" data-m="2.13">7.0 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">From Wall</span><span class="spec-value" data-ft="10–12" data-m="3.0–3.7">10–12 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Device to Device</span><span class="spec-value" data-ft="3–4" data-m="0.9–1.2">3–4 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Jig Distance</span><span class="spec-value" data-ft="10" data-m="3.05">10 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Detection</span><span class="spec-value detect">Once (on entry)</span></div>
+                </div>
+            </div>
+
+            <!-- Degrease -->
+            <div class="spec-card area-card degrease-card">
+                <div class="spec-card-header">
+                    <div class="spec-icon degrease-icon">5</div>
+                    <div>
+                        <h4>DEGREASE TANK</h4>
+                        <span class="spec-tag">Reader #5 • 5 ft from Area 1</span>
+                    </div>
+                </div>
+                <div class="spec-details">
+                    <div class="spec-row"><span class="spec-label">Tank Size</span><span class="spec-value" data-ft="5.0 × 49.2 × 4.0" data-m="1.5 × 15.0 × 1.2">5.0 × 49.2 × 4.0 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Device to Tank</span><span class="spec-value" data-ft="5.0" data-m="1.52">5.0 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Detection</span><span class="spec-value detect">Dip → Timer Start</span></div>
+                </div>
+            </div>
+
+            <!-- Area 2: Inside Enclosure -->
+            <div class="spec-card area-card area2-card">
+                <div class="spec-card-header">
+                    <div class="spec-icon area2-icon">⬡</div>
+                    <div>
+                        <h4>ENCLOSURE AREA</h4>
+                        <span class="spec-tag">Readers 6–11 • Glass Front</span>
+                    </div>
+                </div>
+                <div class="spec-details">
+                    <div class="spec-row"><span class="spec-label">Tanks</span><span class="spec-value">Acid×3, Rinse×2, Flux</span></div>
+                    <div class="spec-row"><span class="spec-label">Device to Tank</span><span class="spec-value" data-ft="2–3" data-m="0.6–0.9">2–3 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Device to Device</span><span class="spec-value" data-ft="2–3" data-m="0.6–0.9">2–3 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Gap from Degrease</span><span class="spec-value" data-ft="5.0" data-m="1.52">5.0 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Barrier</span><span class="spec-value glass-val">Glass (Front Side)</span></div>
+                    <div class="spec-row"><span class="spec-label">Detection</span><span class="spec-value detect">Dip → Timer Start/Stop</span></div>
+                </div>
+            </div>
+
+            <!-- Area 3: After Glass -->
+            <div class="spec-card area-card area3-card">
+                <div class="spec-card-header">
+                    <div class="spec-icon area3-icon">3</div>
+                    <div>
+                        <h4>POST-ENCLOSURE TANKS</h4>
+                        <span class="spec-tag">Readers 12–15 • After Glass</span>
+                    </div>
+                </div>
+                <div class="spec-details">
+                    <div class="spec-row"><span class="spec-label">Tanks</span><span class="spec-value">Dryer, Zinc, Quench, Dichrom</span></div>
+                    <div class="spec-row"><span class="spec-label">Device to Tank</span><span class="spec-value" data-ft="3–4" data-m="0.9–1.2">3–4 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Tank Gaps</span><span class="spec-value" data-ft="10, 7, 5, 4" data-m="3.0, 2.1, 1.5, 1.2">10, 7, 5, 4 ft</span></div>
+                    <div class="spec-row"><span class="spec-label">Detection</span><span class="spec-value detect">Dip → Timer Start/Stop</span></div>
+                </div>
+            </div>
+
+            <!-- Tank Dimensions -->
+            <div class="spec-card">
+                <div class="spec-card-header">
+                    <div class="spec-icon tank-icon"></div>
+                    <div>
+                        <h4>TANK DIMENSIONS (AVG.)</h4>
+                        <span class="spec-tag">All Process Tanks</span>
+                    </div>
+                </div>
+                <div class="spec-details">
+                    <div class="spec-row"><span class="spec-label">Length</span><span class="spec-value" data-ft="49.2" data-m="15.0">49.2 ft (15 m)</span></div>
+                    <div class="spec-row"><span class="spec-label">Width</span><span class="spec-value" data-ft="4.9" data-m="1.5">4.9 ft (1.5 m)</span></div>
+                    <div class="spec-row"><span class="spec-label">Height</span><span class="spec-value" data-ft="4.0" data-m="1.2">4.0 ft (1.2 m)</span></div>
+                    <div class="spec-row"><span class="spec-label">Material</span><span class="spec-value">Stainless Steel</span></div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Controls Legend (Bottom Left) -->
+    <div id="controls-legend">
+        <div class="legend-item"><kbd>LMB</kbd> <span>Rotate</span></div>
+        <div class="legend-item"><kbd>RMB</kbd> <span>Pan</span></div>
+        <div class="legend-item"><kbd>Scroll</kbd> <span>Zoom</span></div>
+        <div class="legend-item"><kbd>R</kbd> <span>Reset</span></div>
+    </div>
+
+    <!-- Feature Toggle Buttons (Bottom Center) -->
+    <div id="feature-toggles">
+        <button class="feature-btn active" id="toggle-signal" title="Toggle RF Signals">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M5 12.55a11 11 0 0114.08 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
+            RF Signal
+        </button>
+        <button class="feature-btn active" id="toggle-measurements" title="Toggle Measurements">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 3H3v18h18zM9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+            Dimensions
+        </button>
+        <button class="feature-btn active" id="toggle-labels" title="Toggle Labels">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+            Labels
+        </button>
+        <button class="feature-btn" id="toggle-xray" title="X-Ray Mode">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><path d="M12 2a15 15 0 010 20M12 2a15 15 0 000 20M2 12h20"/></svg>
+            X-Ray
+        </button>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="hidden"><span id="toast-message"></span></div>
+
+    <script type="module" src="js/app.js?v=7"></script>
+</body>
+</html>
