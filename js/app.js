@@ -150,6 +150,11 @@ function init() {
     measureGroup = new THREE.Group(); measureGroup.name = 'measurements'; scene.add(measureGroup);
     labelGroup = new THREE.Group(); labelGroup.name = 'labels'; scene.add(labelGroup);
 
+    // Initialize zone labels groups as children of the main label group
+    zone1LabelGroup = new THREE.Group(); zone1LabelGroup.name = 'zone1Labels'; labelGroup.add(zone1LabelGroup);
+    zone2LabelGroup = new THREE.Group(); zone2LabelGroup.name = 'zone2Labels'; labelGroup.add(zone2LabelGroup);
+    zone3LabelGroup = new THREE.Group(); zone3LabelGroup.name = 'zone3Labels'; labelGroup.add(zone3LabelGroup);
+
     buildLighting();
     buildFactory();
     buildArea1();
@@ -346,11 +351,7 @@ function createTank(id, x, label, liqColor) {
     tankMeshes[id] = g;
     tankPositions[id] = { x, z: -l / 2 }; // center of tank for jig positioning
 
-    // 3D Timer Label
-    const timerLabelObj = addLabel('--:--', x, TANK_H + 3.0, -2, 'tank-timer-3d');
-    if (layoutData.tanks[id]) {
-        layoutData.tanks[id].timerElem = timerLabelObj.element;
-    }
+    // No longer creating 3D timer label above the tanks as they are shown in the bottom SCADA HMI panel
 
     return g;
 }
@@ -510,7 +511,7 @@ function buildArea1() {
     }
 
     // "JIG IN AREA" floor label
-    addLabel('⬆ JIG IN AREA', 5.25, 0.3, LAYOUT.area1_jigZ + 2, 'area-label');
+    addLabel('⬆ JIG IN AREA', 5.25, 0.3, 10, 'area-label', zone1LabelGroup);
 }
 
 // ============================================================
@@ -531,8 +532,8 @@ function buildDegrease() {
     glass.position.set(dg.x, 4, 2.5);
     scene.add(glass);
 
-    addLabel('🧪 DEGREASE', dg.x, TANK_H + 1, -2, 'tank-label');
-    addLabel('📡 Reader #5', dg.x, 8, 5, 'reader-label');
+    addLabel('🧪 DEGREASE', dg.x, TANK_H + 1, -2, 'tank-label', zone2LabelGroup);
+    addLabel('📡 Reader #5', dg.x, 8, 5, 'reader-label', zone2LabelGroup);
 }
 
 // ============================================================
@@ -551,8 +552,8 @@ function buildEnclosure() {
         tankCenters.push(cx);
         createTank(t.id, cx, t.label, t.liqColor);
         createReader(t.readerId, cx, LAYOUT.enclosure.deviceToTank, 7);
-        addLabel(`🧪 ${t.label}`, cx, TANK_H + 1, -2, 'tank-label');
-        addLabel(`📡 #${t.readerId}`, cx, 8, LAYOUT.enclosure.deviceToTank, 'reader-label');
+        addLabel(`🧪 ${t.label}`, cx, TANK_H + 1, -2, 'tank-label', zone2LabelGroup);
+        addLabel(`📡 #${t.readerId}`, cx, 8, LAYOUT.enclosure.deviceToTank, 'reader-label', zone2LabelGroup);
         ex += TANK_W + LAYOUT.enclosure.gap;
     });
 
@@ -623,7 +624,7 @@ function buildEnclosure() {
     scene.add(enclosureGroup);
 
     // Enclosure area label
-    addLabel('🏗️ ENCLOSURE (Glass Front — Tanks Inside)', encCX, encH + 1, 0, 'area-label');
+    addLabel('🏗️ ENCLOSURE (Glass Front — Tanks Inside)', encCX, encH + 1, 0, 'area-label', zone2LabelGroup);
 }
 
 // ============================================================
@@ -645,8 +646,8 @@ function buildArea3() {
         glass.position.set(pos.x, 3.5, 1.5);
         scene.add(glass);
 
-        addLabel(`🧪 ${t.label}`, pos.x, TANK_H + 1, -2, 'tank-label');
-        addLabel(`📡 #${t.readerId}`, pos.x, 8, LAYOUT.area3_deviceToTank, 'reader-label');
+        addLabel(`🧪 ${t.label}`, pos.x, TANK_H + 1, -2, 'tank-label', zone3LabelGroup);
+        addLabel(`📡 #${t.readerId}`, pos.x, 8, LAYOUT.area3_deviceToTank, 'reader-label', zone3LabelGroup);
     });
 }
 
@@ -875,27 +876,13 @@ function addDimLine(x1, y1, z1, x2, y2, z2, ftText, mText, isVertical) {
 //  AREA LABELS
 // ============================================================
 function buildAreaLabels() {
-    // Zone 1 labels group
-    zone1LabelGroup = new THREE.Group();
-    zone1LabelGroup.name = 'zone1Labels';
-    scene.add(zone1LabelGroup);
     addLabel('ZONE 1 — WALL MOUNTED READERS', 5.25, 10, LAYOUT.area1_readerZ, 'area-label', zone1LabelGroup);
-
-    // Zone 2 labels group
-    zone2LabelGroup = new THREE.Group();
-    zone2LabelGroup.name = 'zone2Labels';
-    scene.add(zone2LabelGroup);
     addLabel('ZONE 2 — INSIDE ENCLOSURE', 37.5, 10, -20, 'area-label', zone2LabelGroup);
-
-    // Zone 3 labels group
-    zone3LabelGroup = new THREE.Group();
-    zone3LabelGroup.name = 'zone3Labels';
-    scene.add(zone3LabelGroup);
     addLabel('ZONE 3 — POST-ENCLOSURE', (layoutData.tanks['dryer'].x + layoutData.tanks['dichrom'].x) / 2, 10, -TANK_L - 3, 'area-label', zone3LabelGroup);
 
     // Reader labels for Area 1
     LAYOUT.area1_readers.forEach(r => {
-        addLabel(`📡 #${r.id}`, r.x, 8, 0, 'reader-label');
+        addLabel(`📡 #${r.id}`, r.x, 8, 0, 'reader-label', zone1LabelGroup);
     });
 }
 
