@@ -146,12 +146,6 @@
                             <label>Speed</label>
                             <input type="range" id="sim-speed" min="1" max="10" value="5" title="Simulation Speed">
                         </div>
-                    </div>
-                    <div class="timer-box" id="timer-box">
-                        <div class="timer-label">DIP TIMER</div>
-                        <div class="timer-value" id="timer-value">00:00</div>
-                        <div class="timer-tank" id="timer-tank">—</div>
-                    </div>
                 </div>
             </div>
 
@@ -273,9 +267,34 @@
         </button>
     </div>
 
+    <!-- Bottom SCADA HMI Bar -->
+    <div id="hmi-panel">
+        <div class="zone-toggle-group">
+            <button class="zone-toggle-btn z1 active" id="toggle-zone1" title="Toggle Zone 1 Labels">Z1</button>
+            <button class="zone-toggle-btn z2 active" id="toggle-zone2" title="Toggle Zone 2 Labels">Z2</button>
+            <button class="zone-toggle-btn z3 active" id="toggle-zone3" title="Toggle Zone 3 Labels">Z3</button>
+        </div>
+        <div class="hmi-stat">
+            <span class="hmi-label">Jig Load</span>
+            <span class="hmi-value" id="hmi-load">0 kg</span>
+        </div>
+        <div class="hmi-stat timer-stat" id="timer-stat">
+            <span class="hmi-label" id="timer-tank">DIP TIMER</span>
+            <span class="hmi-value" id="timer-value">00:00</span>
+        </div>
+        <div class="hmi-stat">
+            <span class="hmi-label">Tank Temp</span>
+            <span class="hmi-value" id="hmi-temp">-- &deg;C</span>
+        </div>
+        <div class="hmi-stat">
+            <span class="hmi-label">Tank pH</span>
+            <span class="hmi-value" id="hmi-ph">--</span>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div id="toast" class="hidden"><span id="toast-message"></span></div>
 
-    <script type="module" src="js/app.js?v=7"></script>
+    <script type="module" src="js/app.js?v=8"></script>
 </body>
 </html>

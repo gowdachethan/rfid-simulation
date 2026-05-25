@@ -91,6 +91,7 @@ let overheadRail;
 // UI state
 let isMetric = false;
 let showSignal = true, showMeasurements = true, showLabels = true, xrayMode = false;
+let zone1LabelGroup, zone2LabelGroup, zone3LabelGroup;
 
 // Simulation state
 let simRunning = false, simPaused = false;
@@ -368,19 +369,24 @@ function createReader(id, x, z, standH) {
     const g = new THREE.Group();
     g.name = `reader_${id}`;
     
-    // Materials based on actual TM860C-PATCH-9 antenna
+    // Materials
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x4a5258, roughness: 0.4, metalness: 0.7 });
-    const antMat = new THREE.MeshStandardMaterial({ color: 0xf4f6f9, roughness: 0.2, metalness: 0.1 }); // White plastic panel
-    const bracketMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.4, metalness: 0.8 }); // Silver metal backplate
-    const pcbMat = new THREE.MeshStandardMaterial({ color: 0x116633, roughness: 0.8, metalness: 0.1 }); // Green PCB board
+    const antMat = new THREE.MeshStandardMaterial({ color: 0xf4f6f9, roughness: 0.2, metalness: 0.1 });
+    const bracketMat = new THREE.MeshStandardMaterial({ color: 0xb0b5ba, roughness: 0.3, metalness: 0.85 });
+    const pcbMat = new THREE.MeshStandardMaterial({ color: 0x116633, roughness: 0.6, metalness: 0.15 });
     const chipMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6, metalness: 0.2 });
+    const silionMat = new THREE.MeshStandardMaterial({ color: 0xc0c5ca, roughness: 0.25, metalness: 0.7 });
+    const ribbonMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.8, metalness: 0.0 });
+    const connectorMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5, metalness: 0.3 });
+    const ethMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.4, metalness: 0.5 });
+    const stickerMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.9, metalness: 0.0 });
 
     // 1. Base plate & Pole
     g.add(makeMesh(new THREE.CylinderGeometry(0.5, 0.6, 0.15, 12), poleMat, 0, 0.075, 0));
     g.add(makeMesh(new THREE.CylinderGeometry(0.08, 0.08, standH - 0.15, 8), poleMat, 0, standH / 2, 0));
     
-    // 2. White Square Antenna Panel (facing negative Z)
-    const antSize = 0.9; // ~10.8 inches square
+    // 2. White Square Antenna Panel (front face)
+    const antSize = 0.9;
     const antThick = 0.08;
     const ant = makeMesh(new THREE.BoxGeometry(antSize, antSize, antThick), antMat, 0, standH, 0);
     ant.name = 'antenna_' + id;
@@ -392,24 +398,84 @@ function createReader(id, x, z, standH) {
     indent.rotation.x = Math.PI / 2;
     g.add(indent);
 
-    // 4. Metal Bracket behind the antenna (positive Z side)
-    const bracket = makeMesh(new THREE.BoxGeometry(0.5, 0.5, 0.04), bracketMat, 0, standH, antThick / 2 + 0.02);
-    g.add(bracket);
+    // 4. Large Aluminum Backplate (mounting plate for modules)
+    const bpW = 0.85, bpH = 0.85, bpT = 0.025;
+    const backplate = makeMesh(new THREE.BoxGeometry(bpW, bpH, bpT), bracketMat, 0, standH, antThick / 2 + bpT / 2);
+    g.add(backplate);
 
-    // 5. Green PCB Module on the bracket
-    const pcb = makeMesh(new THREE.BoxGeometry(0.35, 0.25, 0.03), pcbMat, 0, standH + 0.05, antThick / 2 + 0.04 + 0.015);
+    // Mounting holes (visual detail)
+    const holeMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7, metalness: 0.3 });
+    const holeGeo = new THREE.CylinderGeometry(0.015, 0.015, bpT + 0.01, 8);
+    [[-0.32, 0.32], [0.32, 0.32], [-0.32, -0.32], [0.32, -0.32], [0, 0.32], [0, -0.32]].forEach(([hx, hy]) => {
+        const hole = makeMesh(holeGeo, holeMat, hx, standH + hy, antThick / 2 + bpT / 2);
+        hole.rotation.x = Math.PI / 2;
+        g.add(hole);
+    });
+
+    // 5. SILION SIM7100 Reader Module (silver box, left side of backplate)
+    const silW = 0.28, silH = 0.2, silT = 0.05;
+    const silZ = antThick / 2 + bpT + silT / 2;
+    const silion = makeMesh(new THREE.BoxGeometry(silW, silH, silT), silionMat, -0.2, standH + 0.05, silZ);
+    g.add(silion);
+    // SILION label sticker
+    const stickerGeo = new THREE.PlaneGeometry(0.18, 0.08);
+    const sticker = new THREE.Mesh(stickerGeo, stickerMat);
+    sticker.position.set(-0.2, standH + 0.05, silZ + silT / 2 + 0.001);
+    g.add(sticker);
+    // QR code on sticker
+    const qrMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9, metalness: 0 });
+    const qr = makeMesh(new THREE.PlaneGeometry(0.04, 0.04), qrMat, -0.16, standH + 0.05, silZ + silT / 2 + 0.002);
+    g.add(qr);
+    // Connector port on SILION
+    g.add(makeMesh(new THREE.BoxGeometry(0.12, 0.04, 0.015), connectorMat, -0.2, standH - 0.02, silZ + silT / 2 - 0.005));
+
+    // 6. SDL1010 PCB Board (green board, right side of backplate)
+    const pcbW = 0.3, pcbH = 0.25, pcbT = 0.02;
+    const pcbZ = antThick / 2 + bpT + pcbT / 2;
+    const pcb = makeMesh(new THREE.BoxGeometry(pcbW, pcbH, pcbT), pcbMat, 0.18, standH, pcbZ);
     g.add(pcb);
+    // Main IC chip on PCB
+    g.add(makeMesh(new THREE.BoxGeometry(0.06, 0.06, 0.01), chipMat, 0.12, standH + 0.04, pcbZ + pcbT / 2 + 0.005));
+    // Secondary chip
+    g.add(makeMesh(new THREE.BoxGeometry(0.04, 0.04, 0.008), chipMat, 0.22, standH + 0.04, pcbZ + pcbT / 2 + 0.004));
+    // Ethernet port (silver box)
+    g.add(makeMesh(new THREE.BoxGeometry(0.07, 0.06, 0.06), ethMat, 0.3, standH + 0.02, pcbZ));
+    // Green terminal block
+    const termMat = new THREE.MeshStandardMaterial({ color: 0x22aa44, roughness: 0.6, metalness: 0.2 });
+    g.add(makeMesh(new THREE.BoxGeometry(0.06, 0.04, 0.04), termMat, 0.3, standH - 0.06, pcbZ));
+    // Capacitors / small components
+    const capMat = new THREE.MeshStandardMaterial({ color: 0x665544, roughness: 0.7, metalness: 0.1 });
+    for (let i = 0; i < 4; i++) {
+        g.add(makeMesh(new THREE.CylinderGeometry(0.008, 0.008, 0.015, 6), capMat, 0.1 + i * 0.05, standH - 0.06, pcbZ + pcbT / 2 + 0.007));
+    }
+    // PCB label sticker
+    const pcbLabel = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.04), stickerMat);
+    pcbLabel.position.set(0.18, standH - 0.02, pcbZ + pcbT / 2 + 0.001);
+    g.add(pcbLabel);
 
-    // 6. Black chip & connectors on the PCB
-    const chip = makeMesh(new THREE.BoxGeometry(0.08, 0.08, 0.02), chipMat, 0, standH + 0.05, antThick / 2 + 0.04 + 0.015 + 0.015);
-    g.add(chip);
+    // 7. Ribbon Cable connecting SILION to SDL1010
+    const ribbonW = 0.08, ribbonH = 0.015;
+    const ribbonLen = 0.22;
+    const ribbon = makeMesh(new THREE.BoxGeometry(ribbonLen, ribbonH, 0.004), ribbonMat, 0, standH + 0.05, silZ - 0.01);
+    g.add(ribbon);
+    // Ribbon connectors at each end
+    g.add(makeMesh(new THREE.BoxGeometry(0.03, 0.025, 0.012), connectorMat, -0.08, standH + 0.05, silZ - 0.01));
+    g.add(makeMesh(new THREE.BoxGeometry(0.03, 0.025, 0.012), connectorMat, 0.08, standH + 0.05, silZ - 0.01));
 
-    // 7. Status LED (kept visible for simulation feedback, placed top right)
-    const led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), new THREE.MeshBasicMaterial({ color: 0x22ff66 }));
+    // 8. Status LED (visible for simulation feedback)
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), new THREE.MeshBasicMaterial({ color: 0x22ff66 }));
     led.position.set(antSize / 2 - 0.1, standH + antSize / 2 - 0.1, -antThick / 2);
     led.name = 'led_' + id;
     g.add(led);
     readerLEDs[id] = led;
+
+    // 9. Detection flash ring (invisible by default, lights up on detection)
+    const flashGeo = new THREE.RingGeometry(0.35, 0.48, 24);
+    const flashMat = new THREE.MeshBasicMaterial({ color: 0xff3300, transparent: true, opacity: 0, side: THREE.DoubleSide });
+    const flash = new THREE.Mesh(flashGeo, flashMat);
+    flash.position.set(0, standH, -antThick / 2 - 0.01);
+    flash.name = 'flash_' + id;
+    g.add(flash);
 
     g.position.set(x, 0, z);
     scene.add(g);
@@ -809,9 +875,23 @@ function addDimLine(x1, y1, z1, x2, y2, z2, ftText, mText, isVertical) {
 //  AREA LABELS
 // ============================================================
 function buildAreaLabels() {
-    addLabel('ZONE 1 — WALL MOUNTED READERS', 5.25, 10, LAYOUT.area1_readerZ, 'area-label');
-    addLabel('ZONE 2 — INSIDE ENCLOSURE', 37.5, 10, -20, 'area-label');
-    addLabel('ZONE 3 — POST-ENCLOSURE', (layoutData.tanks['dryer'].x + layoutData.tanks['dichrom'].x) / 2, 10, -TANK_L - 3, 'area-label');
+    // Zone 1 labels group
+    zone1LabelGroup = new THREE.Group();
+    zone1LabelGroup.name = 'zone1Labels';
+    scene.add(zone1LabelGroup);
+    addLabel('ZONE 1 — WALL MOUNTED READERS', 5.25, 10, LAYOUT.area1_readerZ, 'area-label', zone1LabelGroup);
+
+    // Zone 2 labels group
+    zone2LabelGroup = new THREE.Group();
+    zone2LabelGroup.name = 'zone2Labels';
+    scene.add(zone2LabelGroup);
+    addLabel('ZONE 2 — INSIDE ENCLOSURE', 37.5, 10, -20, 'area-label', zone2LabelGroup);
+
+    // Zone 3 labels group
+    zone3LabelGroup = new THREE.Group();
+    zone3LabelGroup.name = 'zone3Labels';
+    scene.add(zone3LabelGroup);
+    addLabel('ZONE 3 — POST-ENCLOSURE', (layoutData.tanks['dryer'].x + layoutData.tanks['dichrom'].x) / 2, 10, -TANK_L - 3, 'area-label', zone3LabelGroup);
 
     // Reader labels for Area 1
     LAYOUT.area1_readers.forEach(r => {
@@ -931,6 +1011,12 @@ function updateSimulation(dt) {
                 step.readers.forEach(rid => {
                     const led = readerLEDs[rid];
                     if (led) { led.material.color.setHex(0xff0000); led.scale.setScalar(2); }
+                    // Flash ring
+                    const rg = readerMeshes[rid];
+                    if (rg) {
+                        const flash = rg.getObjectByName('flash_' + rid);
+                        if (flash) { flash.material.opacity = 0.8; flash.material.color.setHex(0xff3300); }
+                    }
                 });
             }
             break;
@@ -950,6 +1036,12 @@ function updateSimulation(dt) {
                 step.readers.forEach(rid => {
                     const led = readerLEDs[rid];
                     if (led) { led.material.color.setHex(0x22ff66); led.scale.setScalar(1); }
+                    // Reset flash ring
+                    const rg = readerMeshes[rid];
+                    if (rg) {
+                        const flash = rg.getObjectByName('flash_' + rid);
+                        if (flash) { flash.material.opacity = 0; }
+                    }
                 });
                 simTimer = 0;
                 simStep++;
@@ -957,7 +1049,6 @@ function updateSimulation(dt) {
                 if (simStep >= PROCESS_STEPS.length) {
                     simPhase = 'returning';
                     document.getElementById('process-status').textContent = 'Returning to Start...';
-                    document.getElementById('timer-box').classList.remove('active');
                     showToast('Cycle Complete - Returning');
                 }
             }
@@ -1015,6 +1106,7 @@ function updateSimUI() {
         
         document.getElementById('timer-value').textContent = timeStr;
         document.getElementById('timer-tank').textContent = `${step.name} (${sec}/${total}s)`;
+        document.getElementById('timer-stat').classList.add('active');
 
         // Update active 3D tank timer hovering above tank
         const currentTank = step.tank ? layoutData.tanks[step.tank] : null;
@@ -1030,6 +1122,7 @@ function updateSimUI() {
             document.getElementById('timer-value').textContent = '--:--';
             document.getElementById('timer-tank').textContent = step.name + ' — ' + simPhase;
         }
+        document.getElementById('timer-stat').classList.remove('active');
     }
 
     // SCADA HMI Telemetry Update
@@ -1063,15 +1156,24 @@ function updateSimUI() {
 //  UI CONTROLS
 // ============================================================
 function setupUI() {
-    // Add SCADA HMI Panel
-    const hmi = document.createElement('div');
-    hmi.id = 'hmi-panel';
-    hmi.innerHTML = `
-        <div class="hmi-stat"><span class="hmi-label">Jig Load</span><span class="hmi-value" id="hmi-load">0 kg</span></div>
-        <div class="hmi-stat"><span class="hmi-label">Tank Temp</span><span class="hmi-value" id="hmi-temp">-- &deg;C</span></div>
-        <div class="hmi-stat"><span class="hmi-label">Tank pH</span><span class="hmi-value" id="hmi-ph">--</span></div>
-    `;
-    document.body.appendChild(hmi);
+    // HMI panel is now in index.html, no need to create dynamically
+
+    // Zone toggle buttons
+    document.getElementById('toggle-zone1').addEventListener('click', function() {
+        this.classList.toggle('active');
+        if (zone1LabelGroup) zone1LabelGroup.visible = this.classList.contains('active');
+        showToast(this.classList.contains('active') ? 'Zone 1 Labels: ON' : 'Zone 1 Labels: OFF');
+    });
+    document.getElementById('toggle-zone2').addEventListener('click', function() {
+        this.classList.toggle('active');
+        if (zone2LabelGroup) zone2LabelGroup.visible = this.classList.contains('active');
+        showToast(this.classList.contains('active') ? 'Zone 2 Labels: ON' : 'Zone 2 Labels: OFF');
+    });
+    document.getElementById('toggle-zone3').addEventListener('click', function() {
+        this.classList.toggle('active');
+        if (zone3LabelGroup) zone3LabelGroup.visible = this.classList.contains('active');
+        showToast(this.classList.contains('active') ? 'Zone 3 Labels: ON' : 'Zone 3 Labels: OFF');
+    });
 
     // Camera views
     document.querySelectorAll('.view-btn').forEach(btn => {
@@ -1248,6 +1350,18 @@ function animate() {
             led.material.opacity = 0.6 + Math.sin(elapsed * 3 + parseInt(id)) * 0.4;
         }
     });
+
+    // Flash ring pulse animation (pulses when detecting)
+    if (simRunning) {
+        Object.keys(readerMeshes).forEach(id => {
+            const rg = readerMeshes[id];
+            const flash = rg.getObjectByName('flash_' + id);
+            if (flash && flash.material.opacity > 0) {
+                flash.material.opacity = 0.4 + Math.sin(elapsed * 8) * 0.4;
+                flash.scale.setScalar(1.0 + Math.sin(elapsed * 6) * 0.15);
+            }
+        });
+    }
 
     // RFID tag glow
     if (jigTag) {
