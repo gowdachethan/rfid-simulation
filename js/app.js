@@ -1655,7 +1655,6 @@ function updateLiveRFIDMode(dt) {
         }
     }
 }
-}
 
 function setReaderLEDColor(id, hex, scale) {
     const led = readerLEDs[id];
