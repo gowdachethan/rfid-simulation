@@ -1497,11 +1497,12 @@ function handleLiveGraceTimeout() {
 function updateLiveRFIDMode(dt) {
     const speed = simSpeed * 2;
     
+    // Check if we have an active tag read to initiate/update the target
     if (liveActiveReaderId !== null) {
-        // Reset/update target simulation reader when active reader changes
         if (liveActiveReaderId !== liveLastReaderId) {
             liveLastReaderId = liveActiveReaderId;
-            if (liveActiveReaderId >= 5 || liveSimReaderId === null) {
+            // Only trigger/restart sequence on entering reader 1 or 5
+            if (liveActiveReaderId === 1 || liveActiveReaderId === 5 || liveSimReaderId === null) {
                 liveSimReaderId = liveActiveReaderId;
                 liveStabilizationActive = false;
                 liveStabilizationDone = false;
@@ -1509,123 +1510,124 @@ function updateLiveRFIDMode(dt) {
                 liveDwellTimer = 0;
             }
         }
+    }
 
-        if (liveSimReaderId !== null) {
-            const targetX = layoutData.readers[liveSimReaderId].x;
-            const jx = jigGroup.position.x;
-            const dx = targetX - jx;
-            
-            // Zone 1 check (Readers 1-4: Jig Entry Area)
-            const isZone1 = (liveSimReaderId >= 1 && liveSimReaderId <= 4);
-            
-            if (Math.abs(dx) > 0.2) {
-                // Safety: Raise jig first before shifting crane horizontally
-                if (jigRod.position.y < 0) {
-                    jigRod.position.y += speed * dt * 2.0;
-                    if (jigRod.position.y >= 0) jigRod.position.y = 0;
-                    updateLiveUI('Safety Raise...');
-                } else {
-                    // Move crane horizontally
-                    jigGroup.position.x += Math.sign(dx) * speed * dt * 3;
-                    setReaderLEDColor(liveSimReaderId, 0xff8800, 1.3);
-                    updateLiveUI(`Moving to Reader #${liveSimReaderId}...`);
-                }
-                setReaderFlashRing(liveSimReaderId, false);
+    // If we have a simulation target, execute the movement and process
+    if (liveSimReaderId !== null) {
+        const targetX = layoutData.readers[liveSimReaderId].x;
+        const jx = jigGroup.position.x;
+        const dx = targetX - jx;
+        
+        // Zone 1 check (Readers 1-4: Jig Entry Area)
+        const isZone1 = (liveSimReaderId >= 1 && liveSimReaderId <= 4);
+        
+        if (Math.abs(dx) > 0.2) {
+            // Safety: Raise jig first before shifting crane horizontally
+            if (jigRod.position.y < 0) {
+                jigRod.position.y += speed * dt * 2.0;
+                if (jigRod.position.y >= 0) jigRod.position.y = 0;
+                updateLiveUI('Safety Raise...');
             } else {
-                // Crane arrived at the correct reader/tank
-                jigGroup.position.x = targetX;
+                // Move crane horizontally
+                jigGroup.position.x += Math.sign(dx) * speed * dt * 3;
+                setReaderLEDColor(liveSimReaderId, 0xff8800, 1.3);
+                updateLiveUI(`Moving to Reader #${liveSimReaderId}...`);
+            }
+            setReaderFlashRing(liveSimReaderId, false);
+        } else {
+            // Crane arrived at the correct reader/tank
+            jigGroup.position.x = targetX;
+            
+            // For all readers, require tag to be present for 5s stabilization delay
+            // Only arm stabilization if it hasn't already completed for this reader
+            if (!liveStabilizationActive && !liveStabilizationDone && liveDwellTimer === 0 && jigRod.position.y >= 0) {
+                liveStabilizationActive = true;
+                liveStabilizationTimer = STABILIZATION_DELAY;
+            }
+            
+            if (liveStabilizationActive && liveStabilizationTimer > 0) {
+                liveStabilizationTimer -= dt;
+                if (liveStabilizationTimer < 0) liveStabilizationTimer = 0;
                 
-                // For all readers, require tag to be present for 5s stabilization delay
-                // Only arm stabilization if it hasn't already completed for this reader
-                if (!liveStabilizationActive && !liveStabilizationDone && liveDwellTimer === 0 && jigRod.position.y >= 0) {
-                    liveStabilizationActive = true;
-                    liveStabilizationTimer = STABILIZATION_DELAY;
+                // Jig remains fully raised during the verification countdown
+                jigRod.position.y = 0;
+                
+                setReaderLEDColor(liveSimReaderId, 0xffaa00, 1.4);
+                updateLiveUI(`Verifying Tag (${liveStabilizationTimer.toFixed(1)}s)...`);
+                
+                if (liveStabilizationTimer <= 0) {
+                    liveStabilizationActive = false;
+                    liveStabilizationDone = true; // Prevent re-arming
                 }
-                
-                if (liveStabilizationActive && liveStabilizationTimer > 0) {
-                    liveStabilizationTimer -= dt;
-                    if (liveStabilizationTimer < 0) liveStabilizationTimer = 0;
-                    
-                    // Jig remains fully raised during the verification countdown
+            } else if (liveStabilizationDone || liveDwellTimer > 0) {
+                // Post-stabilization: perform the actual action
+                if (isZone1) {
+                    // Zone 1 (Jig Area): No dipping, auto-advance to next reader
                     jigRod.position.y = 0;
-                    
-                    setReaderLEDColor(liveSimReaderId, 0xffaa00, 1.4);
-                    updateLiveUI(`Verifying Tag (${liveStabilizationTimer.toFixed(1)}s)...`);
-                    
-                    if (liveStabilizationTimer <= 0) {
+                    if (liveSimReaderId < 4) {
+                        liveSimReaderId++;
                         liveStabilizationActive = false;
-                        liveStabilizationDone = true; // Prevent re-arming
+                        liveStabilizationDone = false; // Reset for next reader
+                        liveStabilizationTimer = 0;
+                        liveDwellTimer = 0;
+                    } else {
+                        // Stay at Reader 4, complete
+                        setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
+                        setReaderFlashRing(liveSimReaderId, true);
+                        updateLiveUI('Jig Sequence Complete');
                     }
-                } else if (liveStabilizationDone || liveDwellTimer > 0) {
-                    // Post-stabilization: perform the actual action
-                    if (isZone1) {
-                        // Zone 1 (Jig Area): No dipping, auto-advance to next reader
-                        jigRod.position.y = 0;
-                        if (liveSimReaderId < 4) {
-                            liveSimReaderId++;
-                            liveStabilizationActive = false;
-                            liveStabilizationDone = false; // Reset for next reader
-                            liveStabilizationTimer = 0;
-                            liveDwellTimer = 0;
+                } else {
+                    // Zones 2 & 3 (Tanks): Lower the jig into the tank and process for tank-specific dipTime
+                    const step = PROCESS_STEPS.find(s => s.readers.includes(liveSimReaderId));
+                    const dipTime = step ? step.dipTime : 30;
+                    
+                    if (liveDwellTimer < dipTime) {
+                        if (jigRod.position.y > -4.5) {
+                            jigRod.position.y -= speed * dt * 2.0;
+                            if (jigRod.position.y <= -4.5) {
+                                jigRod.position.y = -4.5;
+                            }
+                            liveDwellTimer = 0.001;
+                            updateLiveUI('Lowering Jig...');
                         } else {
-                            // Stay at Reader 4, complete
+                            // Fully lowered: run process dwell timer
+                            if (liveDwellTimer === 0.001) {
+                                liveDwellTimer = 0.002;
+                            }
+                            liveDwellTimer += dt;
+                            if (liveDwellTimer >= dipTime) {
+                                liveDwellTimer = dipTime;
+                            }
                             setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
                             setReaderFlashRing(liveSimReaderId, true);
-                            updateLiveUI('Jig Sequence Complete');
+                            updateLiveUI('Processing / Dipping...');
                         }
                     } else {
-                        // Zones 2 & 3 (Tanks): Lower the jig into the tank and process for tank-specific dipTime
-                        const step = PROCESS_STEPS.find(s => s.readers.includes(liveSimReaderId));
-                        const dipTime = step ? step.dipTime : 30;
-                        
-                        if (liveDwellTimer < dipTime) {
-                            if (jigRod.position.y > -4.5) {
-                                jigRod.position.y -= speed * dt * 2.0;
-                                if (jigRod.position.y <= -4.5) {
-                                    jigRod.position.y = -4.5;
-                                }
-                                liveDwellTimer = 0.001;
-                                updateLiveUI('Lowering Jig...');
+                        // Dipping finished: raise the jig back to home
+                        if (jigRod.position.y < 0) {
+                            jigRod.position.y += speed * dt * 2.0;
+                            if (jigRod.position.y >= 0) {
+                                jigRod.position.y = 0;
+                            }
+                            updateLiveUI('Raising Jig...');
+                        } else {
+                            jigRod.position.y = 0;
+                            setReaderLEDColor(liveSimReaderId, 0x22ff66, 1.0);
+                            setReaderFlashRing(liveSimReaderId, false);
+                            updateLiveUI('Dipping Complete');
+                            
+                            // Auto-advance to the next tank in Zone 2 & 3
+                            if (liveSimReaderId < 15) {
+                                liveSimReaderId++;
+                                liveStabilizationActive = false;
+                                liveStabilizationDone = false; // Reset for next reader
+                                liveStabilizationTimer = 0;
+                                liveDwellTimer = 0;
                             } else {
-                                // Fully lowered: run process dwell timer
-                                if (liveDwellTimer === 0.001) {
-                                    liveDwellTimer = 0.002;
-                                }
-                                liveDwellTimer += dt;
-                                if (liveDwellTimer >= dipTime) {
-                                    liveDwellTimer = dipTime;
-                                }
+                                // Stay at Reader 15, complete
                                 setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
                                 setReaderFlashRing(liveSimReaderId, true);
-                                updateLiveUI('Processing / Dipping...');
-                            }
-                        } else {
-                            // Dipping finished: raise the jig back to home
-                            if (jigRod.position.y < 0) {
-                                jigRod.position.y += speed * dt * 2.0;
-                                if (jigRod.position.y >= 0) {
-                                    jigRod.position.y = 0;
-                                }
-                                updateLiveUI('Raising Jig...');
-                            } else {
-                                jigRod.position.y = 0;
-                                setReaderLEDColor(liveSimReaderId, 0x22ff66, 1.0);
-                                setReaderFlashRing(liveSimReaderId, false);
-                                updateLiveUI('Dipping Complete');
-                                
-                                // Auto-advance to the next tank in Zone 2 & 3
-                                if (liveSimReaderId < 15) {
-                                    liveSimReaderId++;
-                                    liveStabilizationActive = false;
-                                    liveStabilizationDone = false; // Reset for next reader
-                                    liveStabilizationTimer = 0;
-                                    liveDwellTimer = 0;
-                                } else {
-                                    // Stay at Reader 15, complete
-                                    setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
-                                    setReaderFlashRing(liveSimReaderId, true);
-                                    updateLiveUI('Process Sequence Complete');
-                                }
+                                updateLiveUI('Process Sequence Complete');
                             }
                         }
                     }
@@ -1638,7 +1640,6 @@ function updateLiveRFIDMode(dt) {
         liveStabilizationDone = false;
         liveStabilizationTimer = 0;
         liveLastReaderId = null;
-        liveSimReaderId = null;
         if (jigRod.position.y < 0) {
             jigRod.position.y += speed * dt * 2.0;
             if (jigRod.position.y >= 0) {
@@ -1653,6 +1654,7 @@ function updateLiveRFIDMode(dt) {
             liveDwellTimer = 0;
         }
     }
+}
 }
 
 function setReaderLEDColor(id, hex, scale) {
