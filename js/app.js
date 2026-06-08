@@ -112,6 +112,7 @@ let liveStabilizationTimer = 0;
 let liveStabilizationActive = false;
 let liveGracePeriods = 0;
 let livePrevTagData = {}; // Stores epc -> { lt, rc } for differential tracking
+let serverIsNonDestructive = false;
 const STABILIZATION_DELAY = 10.0; // 10 seconds delay as required
 const LIVE_SERVER_URL = 'http://127.0.0.1:12345/';
 
@@ -1341,6 +1342,7 @@ function toggleLiveMode() {
         // Start polling loop
         liveGracePeriods = 0;
         livePrevTagData = {};
+        serverIsNonDestructive = false;
         pollLiveRFIDServer(); // Immediate initial poll
         livePollInterval = setInterval(pollLiveRFIDServer, 500);
         
@@ -1370,6 +1372,7 @@ function toggleLiveMode() {
         liveStabilizationActive = false;
         liveStabilizationTimer = 0;
         livePrevTagData = {};
+        serverIsNonDestructive = false;
         
         // Reset positions & lights
         jigGroup.position.set(-3.0, 0, -TANK_L / 2);
@@ -1395,7 +1398,7 @@ function pollLiveRFIDServer() {
         .then(response => response.json())
         .then(result => {
             if (result && Array.isArray(result.tags) && result.tags.length > 0) {
-                // Find a tag that has a valid antenna ID (at or antenna) and is actively scanning (differential tracking)
+                // Find a tag that has a valid antenna ID (at or antenna) and is actively scanning (self-calibrating tracking)
                 let activeTag = null;
                 for (let i = 0; i < result.tags.length; i++) {
                     const t = result.tags[i];
@@ -1405,15 +1408,32 @@ function pollLiveRFIDServer() {
                         const rc = t.rc || 0;
                         const prev = livePrevTagData[epc];
                         
-                        // Active if:
-                        // 1. We've never seen this tag before (prev is undefined)
-                        // 2. OR its last-seen timestamp (lt) has updated
-                        // 3. OR its read count (rc) has increased
-                        if (!prev || lt !== prev.lt || rc !== prev.rc) {
+                        if (!prev) {
+                            // First time seeing this tag
                             activeTag = t;
-                            livePrevTagData[epc] = { lt, rc };
-                            break;
+                            livePrevTagData[epc] = { lt, rc, staleCount: 0 };
+                        } else {
+                            const changed = (lt !== prev.lt || rc !== prev.rc);
+                            if (changed) {
+                                activeTag = t;
+                                livePrevTagData[epc] = { lt, rc, staleCount: 0 };
+                            } else {
+                                // Data has not changed
+                                prev.staleCount = (prev.staleCount || 0) + 1;
+                                
+                                // If it hasn't changed for 5 polls (2.5 seconds), the server is keeping stale tags (non-destructive)
+                                if (prev.staleCount >= 5) {
+                                    serverIsNonDestructive = true;
+                                }
+                                
+                                // In destructive mode (e.g. old .exe), even if rc is the same, 
+                                // the fact that it is returned in the response means it is still actively scanned!
+                                if (!serverIsNonDestructive) {
+                                    activeTag = t;
+                                }
+                            }
                         }
+                        if (activeTag) break;
                     }
                 }
                 
