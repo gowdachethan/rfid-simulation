@@ -112,6 +112,7 @@ let liveActiveRSSI = 'N/A';
 let liveDwellTimer = 0;
 let liveStabilizationTimer = 0;
 let liveStabilizationActive = false;
+let liveStabilizationDone = false;
 let liveGracePeriods = 0;
 let livePrevTagData = {}; // Stores epc -> { lt, rc } for differential tracking
 let serverIsNonDestructive = false;
@@ -1376,6 +1377,7 @@ function toggleLiveMode() {
         liveActiveRSSI = 'N/A';
         liveDwellTimer = 0;
         liveStabilizationActive = false;
+        liveStabilizationDone = false;
         liveStabilizationTimer = 0;
         livePrevTagData = {};
         serverIsNonDestructive = false;
@@ -1502,6 +1504,7 @@ function updateLiveRFIDMode(dt) {
             if (liveActiveReaderId >= 5 || liveSimReaderId === null) {
                 liveSimReaderId = liveActiveReaderId;
                 liveStabilizationActive = false;
+                liveStabilizationDone = false;
                 liveStabilizationTimer = 0;
                 liveDwellTimer = 0;
             }
@@ -1533,7 +1536,8 @@ function updateLiveRFIDMode(dt) {
                 jigGroup.position.x = targetX;
                 
                 // For all readers, require tag to be present for 5s stabilization delay
-                if (!liveStabilizationActive && liveDwellTimer === 0 && jigRod.position.y >= 0) {
+                // Only arm stabilization if it hasn't already completed for this reader
+                if (!liveStabilizationActive && !liveStabilizationDone && liveDwellTimer === 0 && jigRod.position.y >= 0) {
                     liveStabilizationActive = true;
                     liveStabilizationTimer = STABILIZATION_DELAY;
                 }
@@ -1548,23 +1552,26 @@ function updateLiveRFIDMode(dt) {
                     setReaderLEDColor(liveSimReaderId, 0xffaa00, 1.4);
                     updateLiveUI(`Verifying Tag (${liveStabilizationTimer.toFixed(1)}s)...`);
                     
-                    if (liveStabilizationTimer === 0) {
+                    if (liveStabilizationTimer <= 0) {
                         liveStabilizationActive = false;
+                        liveStabilizationDone = true; // Prevent re-arming
                     }
-                } else {
+                } else if (liveStabilizationDone || liveDwellTimer > 0) {
+                    // Post-stabilization: perform the actual action
                     if (isZone1) {
                         // Zone 1 (Jig Area): No dipping, auto-advance to next reader
                         jigRod.position.y = 0;
                         if (liveSimReaderId < 4) {
                             liveSimReaderId++;
                             liveStabilizationActive = false;
+                            liveStabilizationDone = false; // Reset for next reader
                             liveStabilizationTimer = 0;
                             liveDwellTimer = 0;
                         } else {
                             // Stay at Reader 4, complete
                             setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
                             setReaderFlashRing(liveSimReaderId, true);
-                            updateLiveUI('Sequence Complete');
+                            updateLiveUI('Jig Sequence Complete');
                         }
                     } else {
                         // Zones 2 & 3 (Tanks): Lower the jig into the tank
@@ -1592,6 +1599,7 @@ function updateLiveRFIDMode(dt) {
     } else {
         // No tag active: raise jig to default home height
         liveStabilizationActive = false;
+        liveStabilizationDone = false;
         liveStabilizationTimer = 0;
         liveLastReaderId = null;
         liveSimReaderId = null;
