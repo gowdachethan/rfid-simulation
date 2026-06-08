@@ -101,6 +101,19 @@ let jigY = 15, jigTargetX = 0;
 const JIG_RAIL_Y = 15;
 const JIG_DIP_Y = 1.5;
 
+// Live RFID Hardware Mode state
+let liveModeActive = false;
+let livePollInterval = null;
+let liveActiveReaderId = null; // 1 to 15
+let liveActiveEPC = '';
+let liveActiveRSSI = 'N/A';
+let liveDwellTimer = 0;
+let liveStabilizationTimer = 0;
+let liveStabilizationActive = false;
+let liveGracePeriods = 0;
+const STABILIZATION_DELAY = 10.0; // 10 seconds delay as required
+const LIVE_SERVER_URL = 'http://127.0.0.1:12345/';
+
 // Computed layout positions
 let layoutData = { readers: {}, tanks: {} };
 let centerX = 0;
@@ -1210,6 +1223,7 @@ function setupUI() {
     document.getElementById('btn-play').addEventListener('click', startSimulation);
     document.getElementById('btn-pause').addEventListener('click', pauseSimulation);
     document.getElementById('btn-reset').addEventListener('click', resetSimulation);
+    document.getElementById('btn-live').addEventListener('click', toggleLiveMode);
     document.getElementById('sim-speed').addEventListener('input', (e) => {
         simSpeed = parseInt(e.target.value);
     });
@@ -1299,6 +1313,317 @@ function onResize() {
 }
 
 // ============================================================
+//  LIVE HARDWARE RFID INTEGRATION (Silion + SDL1010 Server)
+// ============================================================
+function toggleLiveMode() {
+    liveModeActive = !liveModeActive;
+    const btn = document.getElementById('btn-live');
+    
+    if (liveModeActive) {
+        // Reset synthetic simulation
+        resetSimulation();
+        
+        // Disable synthetic controls
+        document.getElementById('btn-play').disabled = true;
+        document.getElementById('btn-pause').disabled = true;
+        document.getElementById('btn-reset').disabled = true;
+        
+        // Update button UI
+        btn.classList.add('active');
+        btn.textContent = '🔌 Live RFID: ON';
+        
+        // Reset positions
+        jigGroup.position.set(-3.0, 0, -TANK_L / 2);
+        jigRod.position.y = 0;
+        resetAllReaderLEDs();
+        
+        // Start polling loop
+        liveGracePeriods = 0;
+        pollLiveRFIDServer(); // Immediate initial poll
+        livePollInterval = setInterval(pollLiveRFIDServer, 500);
+        
+        showToast('Live RFID Mode Enabled');
+        updateLiveUI('Standby');
+    } else {
+        // Clear polling
+        if (livePollInterval) {
+            clearInterval(livePollInterval);
+            livePollInterval = null;
+        }
+        
+        // Enable synthetic controls
+        document.getElementById('btn-play').disabled = false;
+        document.getElementById('btn-pause').disabled = true;
+        document.getElementById('btn-reset').disabled = true;
+        
+        // Update button UI
+        btn.classList.remove('active');
+        btn.textContent = '🔌 Live RFID: OFF';
+        
+        // Reset variables
+        liveActiveReaderId = null;
+        liveActiveEPC = '';
+        liveActiveRSSI = 'N/A';
+        liveDwellTimer = 0;
+        liveStabilizationActive = false;
+        liveStabilizationTimer = 0;
+        
+        // Reset positions & lights
+        jigGroup.position.set(-3.0, 0, -TANK_L / 2);
+        jigRod.position.y = 0;
+        resetAllReaderLEDs();
+        
+        // Reset UI labels
+        document.getElementById('process-status').textContent = 'Ready to Start';
+        document.getElementById('timer-value').textContent = '00:00';
+        document.getElementById('timer-tank').textContent = 'DIP TIMER';
+        document.getElementById('timer-stat').classList.remove('active');
+        
+        showToast('Live RFID Mode Disabled');
+    }
+}
+
+function pollLiveRFIDServer() {
+    if (!liveModeActive) return;
+    
+    fetch(LIVE_SERVER_URL)
+        .then(response => response.json())
+        .then(result => {
+            if (result && Array.isArray(result.tags) && result.tags.length > 0) {
+                // Find a tag that has a valid antenna ID (at or antenna)
+                const validTag = result.tags.find(t => t.hasOwnProperty('at') || t.hasOwnProperty('antenna'));
+                if (validTag) {
+                    const antId = parseInt(validTag.at || validTag.antenna);
+                    // Verify reader ID is in range 1-15
+                    if (antId >= 1 && antId <= 15) {
+                        liveActiveReaderId = antId;
+                        liveActiveEPC = validTag.ep || validTag.epc || 'N/A';
+                        liveActiveRSSI = validTag.ri || validTag.rssi || 'N/A';
+                        liveGracePeriods = 0;
+                    }
+                }
+            } else {
+                // No tags returned this poll, increment grace period to prevent flickering
+                if (liveActiveReaderId !== null) {
+                    liveGracePeriods++;
+                    if (liveGracePeriods > 3) { // 1.5 seconds threshold
+                        liveActiveReaderId = null;
+                        liveActiveEPC = '';
+                        liveActiveRSSI = 'N/A';
+                        liveStabilizationActive = false;
+                        liveStabilizationTimer = 0;
+                    }
+                }
+            }
+        })
+        .catch(err => {
+            console.warn('RFID Server Connection Error:', err);
+            if (liveActiveReaderId !== null) {
+                liveGracePeriods++;
+                if (liveGracePeriods > 4) {
+                    liveActiveReaderId = null;
+                    liveActiveEPC = '';
+                    liveActiveRSSI = 'N/A';
+                    liveStabilizationActive = false;
+                    liveStabilizationTimer = 0;
+                    updateLiveUI('Server Connection Error');
+                }
+            } else {
+                const statusEl = document.getElementById('process-status');
+                if (statusEl) statusEl.innerHTML = `LIVE: <span style="color: #ef4444;">DISCONNECTED</span><br><span style="color: #64748b; font-size: 0.55rem;">Server not running on port 12345</span>`;
+            }
+        });
+}
+
+function updateLiveRFIDMode(dt) {
+    const speed = simSpeed * 2;
+    
+    if (liveActiveReaderId !== null) {
+        const targetX = layoutData.readers[liveActiveReaderId].x;
+        const jx = jigGroup.position.x;
+        const dx = targetX - jx;
+        
+        if (Math.abs(dx) > 0.2) {
+            // Safety: Raise jig first before shifting crane horizontally
+            if (jigRod.position.y < 0) {
+                jigRod.position.y += speed * dt * 2.0;
+                if (jigRod.position.y >= 0) jigRod.position.y = 0;
+                updateLiveUI('Safety Raise...');
+            } else {
+                // Move crane horizontally
+                jigGroup.position.x += Math.sign(dx) * speed * dt * 3;
+                setReaderLEDColor(liveActiveReaderId, 0xff8800, 1.3);
+                updateLiveUI(`Moving to Reader #${liveActiveReaderId}...`);
+            }
+            setReaderFlashRing(liveActiveReaderId, false);
+        } else {
+            // Crane arrived at the correct reader/tank
+            jigGroup.position.x = targetX;
+            
+            // Start stabilization delay
+            if (!liveStabilizationActive && jigRod.position.y >= 0 && liveDwellTimer === 0) {
+                liveStabilizationActive = true;
+                liveStabilizationTimer = STABILIZATION_DELAY;
+            }
+            
+            if (liveStabilizationActive && liveStabilizationTimer > 0) {
+                liveStabilizationTimer -= dt;
+                setReaderLEDColor(liveActiveReaderId, 0xffaa00, 1.4);
+                updateLiveUI(`Stabilizing (${liveStabilizationTimer.toFixed(1)}s)...`);
+            } else {
+                liveStabilizationActive = false;
+                // Lower and dip
+                if (jigRod.position.y > -4.5) {
+                    jigRod.position.y -= speed * dt * 2.0;
+                    if (jigRod.position.y <= -4.5) jigRod.position.y = -4.5;
+                    updateLiveUI('Lowering Jig...');
+                } else {
+                    // Fully lowered: run dwell timer and activate process lights
+                    liveDwellTimer += dt;
+                    setReaderLEDColor(liveActiveReaderId, 0xff0000, 1.8);
+                    setReaderFlashRing(liveActiveReaderId, true);
+                    updateLiveUI('Processing / Dipping...');
+                }
+            }
+        }
+    } else {
+        // No tag active: raise jig to default home height
+        liveStabilizationActive = false;
+        liveStabilizationTimer = 0;
+        if (jigRod.position.y < 0) {
+            jigRod.position.y += speed * dt * 2.0;
+            if (jigRod.position.y >= 0) {
+                jigRod.position.y = 0;
+                resetAllReaderLEDs();
+                liveDwellTimer = 0;
+            }
+            updateLiveUI('Raising Jig...');
+        } else {
+            resetAllReaderLEDs();
+            updateLiveUI('Standby - Waiting for tag...');
+            liveDwellTimer = 0;
+        }
+    }
+}
+
+function setReaderLEDColor(id, hex, scale) {
+    const led = readerLEDs[id];
+    if (led) {
+        led.material.color.setHex(hex);
+        led.scale.setScalar(scale);
+        led.material.opacity = 1.0;
+    }
+}
+
+function setReaderFlashRing(id, active) {
+    const rg = readerMeshes[id];
+    if (rg) {
+        const flash = rg.getObjectByName('flash_' + id);
+        if (flash) {
+            flash.material.opacity = active ? 0.8 : 0;
+            if (active) flash.material.color.setHex(0xff3300);
+        }
+    }
+}
+
+function resetAllReaderLEDs() {
+    Object.entries(readerLEDs).forEach(([id, led]) => {
+        led.material.color.setHex(0x22ff66);
+        led.scale.setScalar(1);
+    });
+    Object.entries(readerMeshes).forEach(([id, rg]) => {
+        const flash = rg.getObjectByName('flash_' + id);
+        if (flash) {
+            flash.material.opacity = 0;
+        }
+    });
+}
+
+function updateLiveUI(statusText) {
+    const timerValEl = document.getElementById('timer-value');
+    const timerTankEl = document.getElementById('timer-tank');
+    const timerStatEl = document.getElementById('timer-stat');
+    
+    if (timerValEl) {
+        if (liveActiveReaderId !== null && !liveStabilizationActive && jigRod.position.y <= -4.5) {
+            timerValEl.textContent = formatTime(liveDwellTimer);
+            timerStatEl.classList.add('active');
+        } else if (liveStabilizationActive) {
+            timerValEl.textContent = 'WAIT';
+            timerStatEl.classList.remove('active');
+        } else {
+            timerValEl.textContent = '--:--';
+            timerStatEl.classList.remove('active');
+        }
+    }
+    
+    if (timerTankEl) {
+        if (liveActiveReaderId !== null) {
+            const step = PROCESS_STEPS.find(s => s.readers.includes(liveActiveReaderId));
+            const tankName = step ? step.name : `Reader #${liveActiveReaderId}`;
+            timerTankEl.textContent = `${tankName} — ${statusText.toUpperCase()}`;
+        } else {
+            timerTankEl.textContent = `LIVE RFID — ${statusText.toUpperCase()}`;
+        }
+    }
+    
+    if (liveActiveReaderId !== null && jigRod.position.y <= -4.5) {
+        const step = PROCESS_STEPS.find(s => s.readers.includes(liveActiveReaderId));
+        if (step && step.tank) {
+            let temp = 25, ph = 7;
+            if (step.tank.includes('acid')) { temp = 65; ph = 2.5; }
+            else if (step.tank === 'degrease') { temp = 80; ph = 9.5; }
+            else if (step.tank === 'flux') { temp = 40; ph = 4.5; }
+            else if (step.tank === 'dryer') { temp = 120; ph = 'N/A'; }
+            else if (step.tank === 'zinc') { temp = 450; ph = 'N/A'; }
+            
+            const tempEl = document.getElementById('hmi-temp');
+            if (tempEl) {
+                tempEl.textContent = temp + ' °C';
+                if (temp > 100) tempEl.className = 'hmi-value danger';
+                else if (temp > 50) tempEl.className = 'hmi-value warning';
+                else tempEl.className = 'hmi-value';
+            }
+            
+            const phEl = document.getElementById('hmi-ph');
+            if (phEl) phEl.textContent = ph;
+        }
+        
+        const loadEl = document.getElementById('hmi-load');
+        if (loadEl) loadEl.textContent = '2450 kg';
+    } else {
+        const tempEl = document.getElementById('hmi-temp');
+        if (tempEl) {
+            tempEl.textContent = '-- °C';
+            tempEl.className = 'hmi-value';
+        }
+        const phEl = document.getElementById('hmi-ph');
+        if (phEl) phEl.textContent = '--';
+        const loadEl = document.getElementById('hmi-load');
+        if (loadEl) loadEl.textContent = '0 kg';
+    }
+    
+    const statusEl = document.getElementById('process-status');
+    if (statusEl) {
+        if (liveModeActive) {
+            if (liveActiveReaderId !== null) {
+                statusEl.innerHTML = `LIVE: ACTIVE<br>EPC: <span style="font-family: monospace; font-size: 0.6rem; color: #0ea5e9;">${liveActiveEPC.substring(0, 10)}...</span><br>RSSI: <span style="color: #10b981;">${liveActiveRSSI} dBm</span>`;
+            } else {
+                statusEl.innerHTML = `LIVE: ACTIVE<br><span style="color: #64748b; font-size: 0.62rem;">Waiting for physical tag...</span>`;
+            }
+        }
+    }
+}
+
+function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+// ============================================================
+
+// ============================================================
 //  ANIMATION LOOP
 // ============================================================
 function animate() {
@@ -1372,7 +1697,11 @@ function animate() {
     if (jigGroup) {
         const wl = jigGroup.getObjectByName('warningLight');
         if (wl) {
-            if (simRunning && (simPhase === 'moving' || simPhase === 'returning')) {
+            const isMoving = liveModeActive 
+                ? (liveActiveReaderId !== null && Math.abs(layoutData.readers[liveActiveReaderId].x - jigGroup.position.x) > 0.2)
+                : (simRunning && (simPhase === 'moving' || simPhase === 'returning'));
+            
+            if (isMoving) {
                 wl.material.color.setHex((Math.floor(elapsed * 6) % 2 === 0) ? 0xffaa00 : 0x332200);
             } else {
                 wl.material.color.setHex(0x332200);
@@ -1381,7 +1710,11 @@ function animate() {
     }
 
     // Simulation update
-    updateSimulation(dt);
+    if (liveModeActive) {
+        updateLiveRFIDMode(dt);
+    } else {
+        updateSimulation(dt);
+    }
 
     controls.update();
     renderer.render(scene, camera);

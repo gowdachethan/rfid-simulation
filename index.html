@@ -138,15 +138,16 @@
                     </div>
                 </div>
                 <div class="spec-details">
-                    <div class="sim-controls">
+                    <div class="sim-controls" style="flex-wrap: wrap; gap: 6px;">
                         <button class="sim-btn primary" id="btn-play" title="Start Process">▶ Start</button>
                         <button class="sim-btn" id="btn-pause" disabled title="Pause">⏸</button>
                         <button class="sim-btn" id="btn-reset" disabled title="Reset">⏹</button>
+                        <button class="sim-btn live-btn" id="btn-live" title="Connect to Silion Tag Web Server (port 12345)">🔌 Live RFID: OFF</button>
                         <div class="speed-control">
                             <label>Speed</label>
                             <input type="range" id="sim-speed" min="1" max="10" value="5" title="Simulation Speed">
                         </div>
-                </div>
+                    </div>
             </div>
 
             <!-- Area 1: Wall Mounted Readers -->

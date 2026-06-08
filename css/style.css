@@ -207,6 +207,10 @@ html, body {
 .sim-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .sim-btn.primary { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.4); color: var(--accent-green); }
 .sim-btn.primary:hover:not(:disabled) { background: rgba(16,185,129,0.25); }
+.sim-btn.live-btn { background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.3); color: #ef4444; }
+.sim-btn.live-btn:hover:not(:disabled) { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.5); }
+.sim-btn.live-btn.active { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.4); color: var(--accent-green); animation: live-glow 1.5s infinite alternate; }
+@keyframes live-glow { 0% { box-shadow: 0 0 4px rgba(16, 185, 129, 0.2); } 100% { box-shadow: 0 0 12px rgba(16, 185, 129, 0.6); } }
 
 .speed-control { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .speed-control label { font-size: 0.6rem; color: var(--text-muted); font-weight: 600; }
