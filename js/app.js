@@ -105,6 +105,7 @@ const JIG_DIP_Y = 1.5;
 let liveModeActive = false;
 let livePollInterval = null;
 let liveActiveReaderId = null; // 1 to 15
+let liveLastReaderId = null;   // Tracks changes to active reader ID
 let liveActiveEPC = '';
 let liveActiveRSSI = 'N/A';
 let liveDwellTimer = 0;
@@ -1343,6 +1344,7 @@ function toggleLiveMode() {
         liveGracePeriods = 0;
         livePrevTagData = {};
         serverIsNonDestructive = false;
+        liveLastReaderId = null;
         pollLiveRFIDServer(); // Immediate initial poll
         livePollInterval = setInterval(pollLiveRFIDServer, 500);
         
@@ -1366,6 +1368,7 @@ function toggleLiveMode() {
         
         // Reset variables
         liveActiveReaderId = null;
+        liveLastReaderId = null;
         liveActiveEPC = '';
         liveActiveRSSI = 'N/A';
         liveDwellTimer = 0;
@@ -1490,6 +1493,14 @@ function updateLiveRFIDMode(dt) {
     const speed = simSpeed * 2;
     
     if (liveActiveReaderId !== null) {
+        // Reset timers if the target reader ID has changed
+        if (liveActiveReaderId !== liveLastReaderId) {
+            liveStabilizationActive = false;
+            liveStabilizationTimer = 0;
+            liveDwellTimer = 0;
+            liveLastReaderId = liveActiveReaderId;
+        }
+
         const targetX = layoutData.readers[liveActiveReaderId].x;
         const jx = jigGroup.position.x;
         const dx = targetX - jx;
@@ -1514,37 +1525,38 @@ function updateLiveRFIDMode(dt) {
             // Crane arrived at the correct reader/tank
             jigGroup.position.x = targetX;
             
-            if (isZone1) {
-                // Zone 1: Immediate detection, no dipping animation, no delay
-                jigRod.position.y = 0;
-                liveStabilizationActive = false;
-                liveStabilizationTimer = 0;
-                liveDwellTimer = 0;
-                setReaderLEDColor(liveActiveReaderId, 0xff0000, 1.8);
-                setReaderFlashRing(liveActiveReaderId, true);
-                updateLiveUI('Jig Detected in Area');
-            } else {
-                // Zones 2 & 3 (Tanks): Require tag to be present for 10s BEFORE dipping starts
-                if (!liveStabilizationActive && liveDwellTimer === 0 && jigRod.position.y >= 0) {
-                    liveStabilizationActive = true;
-                    liveStabilizationTimer = STABILIZATION_DELAY;
-                }
+            // For all readers, require tag to be present for 10s stabilization delay
+            if (!liveStabilizationActive && liveDwellTimer === 0 && jigRod.position.y >= 0) {
+                liveStabilizationActive = true;
+                liveStabilizationTimer = STABILIZATION_DELAY;
+            }
+            
+            if (liveStabilizationActive && liveStabilizationTimer > 0) {
+                liveStabilizationTimer -= dt;
+                if (liveStabilizationTimer < 0) liveStabilizationTimer = 0;
                 
-                if (liveStabilizationActive && liveStabilizationTimer > 0) {
-                    liveStabilizationTimer -= dt;
-                    if (liveStabilizationTimer < 0) liveStabilizationTimer = 0;
-                    
-                    // Jig remains fully raised during the verification countdown
+                // Jig remains fully raised during the verification countdown
+                jigRod.position.y = 0;
+                
+                setReaderLEDColor(liveActiveReaderId, 0xffaa00, 1.4);
+                updateLiveUI(`Verifying Tag (${liveStabilizationTimer.toFixed(1)}s)...`);
+                
+                if (liveStabilizationTimer === 0) {
+                    liveStabilizationActive = false;
+                }
+            } else {
+                if (isZone1) {
+                    // Zone 1: No dipping animation, stays raised, but starts ticking dwell time
                     jigRod.position.y = 0;
-                    
-                    setReaderLEDColor(liveActiveReaderId, 0xffaa00, 1.4);
-                    updateLiveUI(`Verifying Tag (${liveStabilizationTimer.toFixed(1)}s)...`);
-                    
-                    if (liveStabilizationTimer === 0) {
-                        liveStabilizationActive = false;
+                    if (liveDwellTimer === 0) {
+                        liveDwellTimer = 0.001;
                     }
+                    liveDwellTimer += dt;
+                    setReaderLEDColor(liveActiveReaderId, 0xff0000, 1.8);
+                    setReaderFlashRing(liveActiveReaderId, true);
+                    updateLiveUI('Processed / Jig in Area...');
                 } else {
-                    // Tag verified: Now lower the jig into the tank
+                    // Zones 2 & 3 (Tanks): Lower the jig into the tank
                     if (jigRod.position.y > -4.5) {
                         jigRod.position.y -= speed * dt * 2.0;
                         if (jigRod.position.y <= -4.5) {
