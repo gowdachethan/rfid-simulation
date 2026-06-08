@@ -1401,53 +1401,25 @@ function pollLiveRFIDServer() {
     if (!liveModeActive) return;
     
     // Use clear=false query parameter to prevent clearing the tag map on the server.
-    // This allows multiple dashboards to run simultaneously without stealing data from each other.
     fetch(LIVE_SERVER_URL + '?clear=false')
         .then(response => response.json())
         .then(result => {
             if (result && Array.isArray(result.tags) && result.tags.length > 0) {
-                // Find a tag that has a valid antenna ID (at or antenna) and is actively scanning (self-calibrating tracking)
+                // Find a tag that has a valid antenna ID and was scanned recently (within 2 seconds)
                 let activeTag = null;
                 for (let i = 0; i < result.tags.length; i++) {
                     const t = result.tags[i];
                     if (t.hasOwnProperty('at') || t.hasOwnProperty('antenna')) {
-                        const epc = t.ep || t.epc;
                         const lt = t.lt || 0;
-                        const rc = t.rc || 0;
-                        const prev = livePrevTagData[epc];
-                        
-                        if (!prev) {
-                            // First time seeing this tag
+                        if (Date.now() - lt < 2000) {
                             activeTag = t;
-                            livePrevTagData[epc] = { lt, rc, staleCount: 0 };
-                        } else {
-                            const changed = (lt !== prev.lt || rc !== prev.rc);
-                            if (changed) {
-                                activeTag = t;
-                                livePrevTagData[epc] = { lt, rc, staleCount: 0 };
-                            } else {
-                                // Data has not changed
-                                prev.staleCount = (prev.staleCount || 0) + 1;
-                                
-                                // If it hasn't changed for 5 polls (2.5 seconds), the server is keeping stale tags (non-destructive)
-                                if (prev.staleCount >= 5) {
-                                    serverIsNonDestructive = true;
-                                }
-                                
-                                // In destructive mode (e.g. old .exe), even if rc is the same, 
-                                // the fact that it is returned in the response means it is still actively scanned!
-                                if (!serverIsNonDestructive) {
-                                    activeTag = t;
-                                }
-                            }
+                            break;
                         }
-                        if (activeTag) break;
                     }
                 }
                 
                 if (activeTag) {
                     const antId = parseInt(activeTag.at || activeTag.antenna);
-                    // Verify reader ID is in range 1-15
                     if (antId >= 1 && antId <= 15) {
                         liveActiveReaderId = antId;
                         liveActiveEPC = activeTag.ep || activeTag.epc || 'N/A';
@@ -1455,7 +1427,6 @@ function pollLiveRFIDServer() {
                         liveGracePeriods = 0;
                     }
                 } else {
-                    // No active changes (stale tag read), increment grace period
                     handleLiveGraceTimeout();
                 }
             } else {
@@ -1466,7 +1437,7 @@ function pollLiveRFIDServer() {
             console.warn('RFID Server Connection Error:', err);
             if (liveActiveReaderId !== null) {
                 liveGracePeriods++;
-                if (liveGracePeriods > 10) { // 5.0 seconds threshold
+                if (liveGracePeriods > 2) { // 1.0 second threshold
                     liveActiveReaderId = null;
                     liveActiveEPC = '';
                     liveActiveRSSI = 'N/A';
@@ -1484,7 +1455,7 @@ function pollLiveRFIDServer() {
 function handleLiveGraceTimeout() {
     if (liveActiveReaderId !== null) {
         liveGracePeriods++;
-        if (liveGracePeriods > 10) { // 5.0 seconds threshold
+        if (liveGracePeriods > 2) { // 1.0 second threshold (2 polls * 500ms)
             liveActiveReaderId = null;
             liveActiveEPC = '';
             liveActiveRSSI = 'N/A';
@@ -1514,6 +1485,11 @@ function updateLiveRFIDMode(dt) {
 
     // If we have a simulation target, execute the movement and process
     if (liveSimReaderId !== null) {
+        if (liveActiveReaderId === null) {
+            // Paused: Tag is lost/removed
+            updateLiveUI('Paused - Tag Lost');
+            return;
+        }
         const targetX = layoutData.readers[liveSimReaderId].x;
         const jx = jigGroup.position.x;
         const dx = targetX - jx;
