@@ -1474,6 +1474,9 @@ function updateLiveRFIDMode(dt) {
         const jx = jigGroup.position.x;
         const dx = targetX - jx;
         
+        // Zone 1 check (Readers 1-4: Jig Entry Area)
+        const isZone1 = (liveActiveReaderId >= 1 && liveActiveReaderId <= 4);
+        
         if (Math.abs(dx) > 0.2) {
             // Safety: Raise jig first before shifting crane horizontally
             if (jigRod.position.y < 0) {
@@ -1491,34 +1494,52 @@ function updateLiveRFIDMode(dt) {
             // Crane arrived at the correct reader/tank
             jigGroup.position.x = targetX;
             
-            // Start stabilization delay (which is our 10-second lowering animation)
-            if (!liveStabilizationActive && liveDwellTimer === 0) {
-                liveStabilizationActive = true;
-                liveStabilizationTimer = STABILIZATION_DELAY;
-            }
-            
-            if (liveStabilizationActive && liveStabilizationTimer > 0) {
-                liveStabilizationTimer -= dt;
-                if (liveStabilizationTimer < 0) liveStabilizationTimer = 0;
-                
-                // Animate the rod lowering progressively in sync with the 10s delay
-                const progress = (STABILIZATION_DELAY - liveStabilizationTimer) / STABILIZATION_DELAY;
-                jigRod.position.y = -4.5 * progress;
-                
-                setReaderLEDColor(liveActiveReaderId, 0xffaa00, 1.4);
-                updateLiveUI(`Stabilizing/Lowering (${liveStabilizationTimer.toFixed(1)}s)...`);
-                
-                if (liveStabilizationTimer === 0) {
-                    liveStabilizationActive = false;
-                    jigRod.position.y = -4.5;
-                    liveDwellTimer = 0.001; // Start the process dip timer
-                }
-            } else {
-                // Fully lowered: run process dwell timer
-                liveDwellTimer += dt;
+            if (isZone1) {
+                // Zone 1: Immediate detection, no dipping animation, no delay
+                jigRod.position.y = 0;
+                liveStabilizationActive = false;
+                liveStabilizationTimer = 0;
+                liveDwellTimer = 0;
                 setReaderLEDColor(liveActiveReaderId, 0xff0000, 1.8);
                 setReaderFlashRing(liveActiveReaderId, true);
-                updateLiveUI('Processing / Dipping...');
+                updateLiveUI('Jig Detected in Area');
+            } else {
+                // Zones 2 & 3 (Tanks): Require tag to be present for 10s BEFORE dipping starts
+                if (!liveStabilizationActive && liveDwellTimer === 0 && jigRod.position.y >= 0) {
+                    liveStabilizationActive = true;
+                    liveStabilizationTimer = STABILIZATION_DELAY;
+                }
+                
+                if (liveStabilizationActive && liveStabilizationTimer > 0) {
+                    liveStabilizationTimer -= dt;
+                    if (liveStabilizationTimer < 0) liveStabilizationTimer = 0;
+                    
+                    // Jig remains fully raised during the verification countdown
+                    jigRod.position.y = 0;
+                    
+                    setReaderLEDColor(liveActiveReaderId, 0xffaa00, 1.4);
+                    updateLiveUI(`Verifying Tag (${liveStabilizationTimer.toFixed(1)}s)...`);
+                    
+                    if (liveStabilizationTimer === 0) {
+                        liveStabilizationActive = false;
+                    }
+                } else {
+                    // Tag verified: Now lower the jig into the tank
+                    if (jigRod.position.y > -4.5) {
+                        jigRod.position.y -= speed * dt * 2.0;
+                        if (jigRod.position.y <= -4.5) {
+                            jigRod.position.y = -4.5;
+                            liveDwellTimer = 0.001; // Start the process dip timer
+                        }
+                        updateLiveUI('Lowering Jig...');
+                    } else {
+                        // Fully lowered: run process dwell timer
+                        liveDwellTimer += dt;
+                        setReaderLEDColor(liveActiveReaderId, 0xff0000, 1.8);
+                        setReaderFlashRing(liveActiveReaderId, true);
+                        updateLiveUI('Processing / Dipping...');
+                    }
+                }
             }
         }
     } else {
