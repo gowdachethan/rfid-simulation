@@ -1574,23 +1574,45 @@ function updateLiveRFIDMode(dt) {
                             updateLiveUI('Jig Sequence Complete');
                         }
                     } else {
-                        // Zones 2 & 3 (Tanks): Lower the jig into the tank
-                        if (jigRod.position.y > -4.5) {
-                            jigRod.position.y -= speed * dt * 2.0;
-                            if (jigRod.position.y <= -4.5) {
-                                jigRod.position.y = -4.5;
-                            }
-                            if (liveDwellTimer === 0) {
+                        // Zones 2 & 3 (Tanks): Lower the jig into the tank and process for tank-specific dipTime
+                        const step = PROCESS_STEPS.find(s => s.readers.includes(liveSimReaderId));
+                        const dipTime = step ? step.dipTime : 30;
+                        
+                        if (liveDwellTimer < dipTime) {
+                            if (jigRod.position.y > -4.5) {
+                                jigRod.position.y -= speed * dt * 2.0;
+                                if (jigRod.position.y <= -4.5) {
+                                    jigRod.position.y = -4.5;
+                                }
                                 liveDwellTimer = 0.001;
+                                updateLiveUI('Lowering Jig...');
+                            } else {
+                                // Fully lowered: run process dwell timer
+                                if (liveDwellTimer === 0.001) {
+                                    liveDwellTimer = 0.002;
+                                }
+                                liveDwellTimer += dt;
+                                if (liveDwellTimer >= dipTime) {
+                                    liveDwellTimer = dipTime;
+                                }
+                                setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
+                                setReaderFlashRing(liveSimReaderId, true);
+                                updateLiveUI('Processing / Dipping...');
                             }
-                            liveDwellTimer += dt;
-                            updateLiveUI('Lowering Jig...');
                         } else {
-                            // Fully lowered: run process dwell timer
-                            liveDwellTimer += dt;
-                            setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
-                            setReaderFlashRing(liveSimReaderId, true);
-                            updateLiveUI('Processing / Dipping...');
+                            // Dipping finished: raise the jig back to home
+                            if (jigRod.position.y < 0) {
+                                jigRod.position.y += speed * dt * 2.0;
+                                if (jigRod.position.y >= 0) {
+                                    jigRod.position.y = 0;
+                                }
+                                updateLiveUI('Raising Jig...');
+                            } else {
+                                jigRod.position.y = 0;
+                                setReaderLEDColor(liveSimReaderId, 0x22ff66, 1.0);
+                                setReaderFlashRing(liveSimReaderId, false);
+                                updateLiveUI('Dipping Complete');
+                            }
                         }
                     }
                 }
@@ -1659,7 +1681,15 @@ function updateLiveUI(statusText) {
     
     if (timerValEl) {
         if (liveSimReaderId !== null && !liveStabilizationActive && liveDwellTimer > 0) {
-            timerValEl.textContent = formatTime(liveDwellTimer);
+            const step = PROCESS_STEPS.find(s => s.readers.includes(liveSimReaderId));
+            const isZone1 = (liveSimReaderId >= 1 && liveSimReaderId <= 4);
+            if (step && !isZone1) {
+                const dipTime = step.dipTime;
+                const remaining = Math.max(0, dipTime - liveDwellTimer);
+                timerValEl.textContent = formatTime(remaining);
+            } else {
+                timerValEl.textContent = formatTime(liveDwellTimer);
+            }
             timerStatEl.classList.add('active');
         } else if (liveStabilizationActive) {
             timerValEl.textContent = formatTime(liveStabilizationTimer);
