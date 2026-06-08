@@ -922,7 +922,7 @@ function startSimulation() {
     document.getElementById('btn-pause').disabled = false;
     document.getElementById('btn-reset').disabled = false;
     document.getElementById('process-status').textContent = 'Running...';
-    document.getElementById('timer-box').classList.add('active');
+    if (document.getElementById('timer-stat')) document.getElementById('timer-stat').classList.add('active');
     showToast('Process Simulation Started');
 }
 
@@ -946,7 +946,7 @@ function resetSimulation() {
     document.getElementById('process-status').textContent = 'Ready to Start';
     document.getElementById('timer-value').textContent = '00:00';
     document.getElementById('timer-tank').textContent = '—';
-    document.getElementById('timer-box').classList.remove('active');
+    if (document.getElementById('timer-stat')) document.getElementById('timer-stat').classList.remove('active');
     showToast('Simulation Reset');
 }
 
