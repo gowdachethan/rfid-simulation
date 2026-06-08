@@ -111,6 +111,7 @@ let liveDwellTimer = 0;
 let liveStabilizationTimer = 0;
 let liveStabilizationActive = false;
 let liveGracePeriods = 0;
+let livePrevTagData = {}; // Stores epc -> { lt, rc } for differential tracking
 const STABILIZATION_DELAY = 10.0; // 10 seconds delay as required
 const LIVE_SERVER_URL = 'http://127.0.0.1:12345/';
 
@@ -1339,6 +1340,7 @@ function toggleLiveMode() {
         
         // Start polling loop
         liveGracePeriods = 0;
+        livePrevTagData = {};
         pollLiveRFIDServer(); // Immediate initial poll
         livePollInterval = setInterval(pollLiveRFIDServer, 500);
         
@@ -1367,6 +1369,7 @@ function toggleLiveMode() {
         liveDwellTimer = 0;
         liveStabilizationActive = false;
         liveStabilizationTimer = 0;
+        livePrevTagData = {};
         
         // Reset positions & lights
         jigGroup.position.set(-3.0, 0, -TANK_L / 2);
@@ -1386,34 +1389,49 @@ function toggleLiveMode() {
 function pollLiveRFIDServer() {
     if (!liveModeActive) return;
     
-    fetch(LIVE_SERVER_URL)
+    // Use clear=false query parameter to prevent clearing the tag map on the server.
+    // This allows multiple dashboards to run simultaneously without stealing data from each other.
+    fetch(LIVE_SERVER_URL + '?clear=false')
         .then(response => response.json())
         .then(result => {
             if (result && Array.isArray(result.tags) && result.tags.length > 0) {
-                // Find a tag that has a valid antenna ID (at or antenna)
-                const validTag = result.tags.find(t => t.hasOwnProperty('at') || t.hasOwnProperty('antenna'));
-                if (validTag) {
-                    const antId = parseInt(validTag.at || validTag.antenna);
+                // Find a tag that has a valid antenna ID (at or antenna) and is actively scanning (differential tracking)
+                let activeTag = null;
+                for (let i = 0; i < result.tags.length; i++) {
+                    const t = result.tags[i];
+                    if (t.hasOwnProperty('at') || t.hasOwnProperty('antenna')) {
+                        const epc = t.ep || t.epc;
+                        const lt = t.lt || 0;
+                        const rc = t.rc || 0;
+                        const prev = livePrevTagData[epc];
+                        
+                        // Active if:
+                        // 1. We've never seen this tag before (prev is undefined)
+                        // 2. OR its last-seen timestamp (lt) has updated
+                        // 3. OR its read count (rc) has increased
+                        if (!prev || lt !== prev.lt || rc !== prev.rc) {
+                            activeTag = t;
+                            livePrevTagData[epc] = { lt, rc };
+                            break;
+                        }
+                    }
+                }
+                
+                if (activeTag) {
+                    const antId = parseInt(activeTag.at || activeTag.antenna);
                     // Verify reader ID is in range 1-15
                     if (antId >= 1 && antId <= 15) {
                         liveActiveReaderId = antId;
-                        liveActiveEPC = validTag.ep || validTag.epc || 'N/A';
-                        liveActiveRSSI = validTag.ri || validTag.rssi || 'N/A';
+                        liveActiveEPC = activeTag.ep || activeTag.epc || 'N/A';
+                        liveActiveRSSI = activeTag.ri || activeTag.rssi || 'N/A';
                         liveGracePeriods = 0;
                     }
+                } else {
+                    // No active changes (stale tag read), increment grace period
+                    handleLiveGraceTimeout();
                 }
             } else {
-                // No tags returned this poll, increment grace period to prevent flickering
-                if (liveActiveReaderId !== null) {
-                    liveGracePeriods++;
-                    if (liveGracePeriods > 3) { // 1.5 seconds threshold
-                        liveActiveReaderId = null;
-                        liveActiveEPC = '';
-                        liveActiveRSSI = 'N/A';
-                        liveStabilizationActive = false;
-                        liveStabilizationTimer = 0;
-                    }
-                }
+                handleLiveGraceTimeout();
             }
         })
         .catch(err => {
@@ -1433,6 +1451,19 @@ function pollLiveRFIDServer() {
                 if (statusEl) statusEl.innerHTML = `LIVE: <span style="color: #ef4444;">DISCONNECTED</span><br><span style="color: #64748b; font-size: 0.55rem;">Server not running on port 12345</span>`;
             }
         });
+}
+
+function handleLiveGraceTimeout() {
+    if (liveActiveReaderId !== null) {
+        liveGracePeriods++;
+        if (liveGracePeriods > 3) { // 1.5 seconds threshold
+            liveActiveReaderId = null;
+            liveActiveEPC = '';
+            liveActiveRSSI = 'N/A';
+            liveStabilizationActive = false;
+            liveStabilizationTimer = 0;
+        }
+    }
 }
 
 function updateLiveRFIDMode(dt) {
