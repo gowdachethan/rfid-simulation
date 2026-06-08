@@ -1612,6 +1612,20 @@ function updateLiveRFIDMode(dt) {
                                 setReaderLEDColor(liveSimReaderId, 0x22ff66, 1.0);
                                 setReaderFlashRing(liveSimReaderId, false);
                                 updateLiveUI('Dipping Complete');
+                                
+                                // Auto-advance to the next tank in Zone 2 & 3
+                                if (liveSimReaderId < 15) {
+                                    liveSimReaderId++;
+                                    liveStabilizationActive = false;
+                                    liveStabilizationDone = false; // Reset for next reader
+                                    liveStabilizationTimer = 0;
+                                    liveDwellTimer = 0;
+                                } else {
+                                    // Stay at Reader 15, complete
+                                    setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
+                                    setReaderFlashRing(liveSimReaderId, true);
+                                    updateLiveUI('Process Sequence Complete');
+                                }
                             }
                         }
                     }
