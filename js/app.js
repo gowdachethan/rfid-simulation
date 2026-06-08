@@ -1549,8 +1549,11 @@ function updateLiveRFIDMode(dt) {
                         jigRod.position.y -= speed * dt * 2.0;
                         if (jigRod.position.y <= -4.5) {
                             jigRod.position.y = -4.5;
-                            liveDwellTimer = 0.001; // Start the process dip timer
                         }
+                        if (liveDwellTimer === 0) {
+                            liveDwellTimer = 0.001;
+                        }
+                        liveDwellTimer += dt;
                         updateLiveUI('Lowering Jig...');
                     } else {
                         // Fully lowered: run process dwell timer
@@ -1621,12 +1624,12 @@ function updateLiveUI(statusText) {
     const timerStatEl = document.getElementById('timer-stat');
     
     if (timerValEl) {
-        if (liveActiveReaderId !== null && !liveStabilizationActive && jigRod.position.y <= -4.5) {
+        if (liveActiveReaderId !== null && !liveStabilizationActive && liveDwellTimer > 0) {
             timerValEl.textContent = formatTime(liveDwellTimer);
             timerStatEl.classList.add('active');
         } else if (liveStabilizationActive) {
-            timerValEl.textContent = 'WAIT';
-            timerStatEl.classList.remove('active');
+            timerValEl.textContent = formatTime(liveStabilizationTimer);
+            timerStatEl.classList.add('active');
         } else {
             timerValEl.textContent = '--:--';
             timerStatEl.classList.remove('active');
@@ -1643,7 +1646,7 @@ function updateLiveUI(statusText) {
         }
     }
     
-    if (liveActiveReaderId !== null && jigRod.position.y <= -4.5) {
+    if (liveActiveReaderId !== null && liveDwellTimer > 0) {
         const step = PROCESS_STEPS.find(s => s.readers.includes(liveActiveReaderId));
         if (step && step.tank) {
             let temp = 25, ph = 7;
