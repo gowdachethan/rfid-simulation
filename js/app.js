@@ -114,7 +114,7 @@ let liveStabilizationActive = false;
 let liveGracePeriods = 0;
 let livePrevTagData = {}; // Stores epc -> { lt, rc } for differential tracking
 let serverIsNonDestructive = false;
-const STABILIZATION_DELAY = 10.0; // 10 seconds delay as required
+const STABILIZATION_DELAY = 5.0; // 5 seconds delay as required
 const LIVE_SERVER_URL = 'http://127.0.0.1:12345/';
 
 // Computed layout positions
@@ -1545,35 +1545,23 @@ function updateLiveRFIDMode(dt) {
                     liveStabilizationActive = false;
                 }
             } else {
-                if (isZone1) {
-                    // Zone 1: No dipping animation, stays raised, but starts ticking dwell time
-                    jigRod.position.y = 0;
+                // Lower the jig into the tank / dip area
+                if (jigRod.position.y > -4.5) {
+                    jigRod.position.y -= speed * dt * 2.0;
+                    if (jigRod.position.y <= -4.5) {
+                        jigRod.position.y = -4.5;
+                    }
                     if (liveDwellTimer === 0) {
                         liveDwellTimer = 0.001;
                     }
                     liveDwellTimer += dt;
+                    updateLiveUI('Lowering Jig...');
+                } else {
+                    // Fully lowered: run process dwell timer
+                    liveDwellTimer += dt;
                     setReaderLEDColor(liveActiveReaderId, 0xff0000, 1.8);
                     setReaderFlashRing(liveActiveReaderId, true);
-                    updateLiveUI('Processed / Jig in Area...');
-                } else {
-                    // Zones 2 & 3 (Tanks): Lower the jig into the tank
-                    if (jigRod.position.y > -4.5) {
-                        jigRod.position.y -= speed * dt * 2.0;
-                        if (jigRod.position.y <= -4.5) {
-                            jigRod.position.y = -4.5;
-                        }
-                        if (liveDwellTimer === 0) {
-                            liveDwellTimer = 0.001;
-                        }
-                        liveDwellTimer += dt;
-                        updateLiveUI('Lowering Jig...');
-                    } else {
-                        // Fully lowered: run process dwell timer
-                        liveDwellTimer += dt;
-                        setReaderLEDColor(liveActiveReaderId, 0xff0000, 1.8);
-                        setReaderFlashRing(liveActiveReaderId, true);
-                        updateLiveUI('Processing / Dipping...');
-                    }
+                    updateLiveUI('Processing / Dipping...');
                 }
             }
         }
