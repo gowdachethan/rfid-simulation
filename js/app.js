@@ -1464,7 +1464,7 @@ function pollLiveRFIDServer() {
             console.warn('RFID Server Connection Error:', err);
             if (liveActiveReaderId !== null) {
                 liveGracePeriods++;
-                if (liveGracePeriods > 4) {
+                if (liveGracePeriods > 10) { // 5.0 seconds threshold
                     liveActiveReaderId = null;
                     liveActiveEPC = '';
                     liveActiveRSSI = 'N/A';
@@ -1482,7 +1482,7 @@ function pollLiveRFIDServer() {
 function handleLiveGraceTimeout() {
     if (liveActiveReaderId !== null) {
         liveGracePeriods++;
-        if (liveGracePeriods > 3) { // 1.5 seconds threshold
+        if (liveGracePeriods > 10) { // 5.0 seconds threshold
             liveActiveReaderId = null;
             liveActiveEPC = '';
             liveActiveRSSI = 'N/A';
