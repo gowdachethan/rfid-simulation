@@ -1472,8 +1472,8 @@ function updateLiveRFIDMode(dt) {
     if (liveActiveReaderId !== null) {
         if (liveActiveReaderId !== liveLastReaderId) {
             liveLastReaderId = liveActiveReaderId;
-            // Only trigger/restart sequence on entering reader 1 or 5
-            if (liveActiveReaderId === 1 || liveActiveReaderId === 5 || liveSimReaderId === null) {
+            // Only trigger/restart sequence on entering reader 1, 5, or 12
+            if (liveActiveReaderId === 1 || liveActiveReaderId === 5 || liveActiveReaderId === 12 || liveSimReaderId === null) {
                 liveSimReaderId = liveActiveReaderId;
                 liveStabilizationActive = false;
                 liveStabilizationDone = false;
@@ -1592,15 +1592,28 @@ function updateLiveRFIDMode(dt) {
                             setReaderFlashRing(liveSimReaderId, false);
                             updateLiveUI('Dipping Complete');
                             
-                            // Auto-advance to the next tank in Zone 2 & 3
-                            if (liveSimReaderId < 15) {
+                            // Auto-advance logic:
+                            // Device 1 runs Readers 5-11. Stops at 11.
+                            // Device 2 runs Readers 12-15. Stops at 15.
+                            if (liveSimReaderId < 11) {
                                 liveSimReaderId++;
                                 liveStabilizationActive = false;
                                 liveStabilizationDone = false; // Reset for next reader
                                 liveStabilizationTimer = 0;
                                 liveDwellTimer = 0;
+                            } else if (liveSimReaderId >= 12 && liveSimReaderId < 15) {
+                                liveSimReaderId++;
+                                liveStabilizationActive = false;
+                                liveStabilizationDone = false; // Reset for next reader
+                                liveStabilizationTimer = 0;
+                                liveDwellTimer = 0;
+                            } else if (liveSimReaderId === 11) {
+                                // Stay at Reader 11, complete Zone 2
+                                setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
+                                setReaderFlashRing(liveSimReaderId, true);
+                                updateLiveUI('Pre-treatment Complete');
                             } else {
-                                // Stay at Reader 15, complete
+                                // Stay at Reader 15, complete Zone 3
                                 setReaderLEDColor(liveSimReaderId, 0xff0000, 1.8);
                                 setReaderFlashRing(liveSimReaderId, true);
                                 updateLiveUI('Process Sequence Complete');
